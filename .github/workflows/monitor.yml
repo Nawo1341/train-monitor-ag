@@ -2,9 +2,8 @@ name: Train Monitor
 
 on:
   schedule:
-    # 15分ごとに実行 (日本時間に合わせて調整が必要だが、CronはUTC)
-    # */15 * * * * = 毎時0, 15, 30, 45分
-    - cron: '*/15 * * * *'
+    # 5分ごとに実行
+    - cron: '*/5 * * * *'
   workflow_dispatch: # 手動実行用
 
 jobs:
