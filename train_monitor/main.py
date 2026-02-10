@@ -59,8 +59,10 @@ def check_train_status():
             alerts = []
             
             # 時刻表の各行（1時間ごと）をループ
-            rows = page.locator("tr").all()
-            print(f"Found {len(rows)} table rows.")
+            # 小樽方面のデータは #panelA2 に含まれているため、コンテナを絞り込む
+            otaru_panel = page.locator("#panelA2")
+            rows = otaru_panel.locator("tr").all()
+            print(f"Found {len(rows)} table rows in Otaru panel (#panelA2).")
 
             for row in rows:
                 # 時を取得 (th.hour)
@@ -75,7 +77,6 @@ def check_train_status():
                 
                 # 時のバリデーション (0-23)
                 if not (0 <= hour <= 23):
-                    print(f"Skipping invalid hour: {hour}")
                     continue
                 
                 # その行に含まれる各列車 (div.item) をループ
@@ -113,13 +114,10 @@ def check_train_status():
                         elif "mark_bubunkyu" in src:
                             status = "⚠️ 部分運休（✖）"
                     
-                    # 2. データ属性 (参考ログとしてのみ使用し、通知判定には使わない)
-                    # ユーザーから「記号がないものは通知不要」との要望があったため
-                    
                     # 判定ログを出力
                     if in_range:
                         log_status = status if status else f"Normal (unkou:{unkou_code}, chien:{chien_info})"
-                        print(f"  [IN RANGE] {hour:02}:{minute:02} | Status: {log_status}")
+                        print(f"  [IN RANGE][OTARU] {hour:02}:{minute:02} | Status: {log_status}")
 
                     if in_range and status:
                         alerts.append(f"{hour:02}:{minute:02} 発 - {status}")
