@@ -53,39 +53,73 @@ def check_train_status():
             
             print(f"Checking trains between {start_time.strftime('%H:%M')} and {end_time.strftime('%H:%M')}")
 
-            # 列車リストの行を取得 (CSSセレクタはサイト構造に依存)
-            # 時刻表の各行をループ
+            # 時刻表の各行（1時間ごと）をループ
             rows = page.locator("tr").all()
             alerts = []
 
             for row in rows:
-                content = row.inner_text()
-                # 「12:34」のような時刻形式を探す
-                import re
-                time_match = re.search(r"(\d{1,2}):(\d{2})", content)
-                if time_match:
-                    hour, minute = map(int, time_match.groups())
-                    # 昨日の23時台や明日の0時台を考慮せず、今日の時刻として扱う簡略化
+                # 時を取得 (th.hour)
+                hour_elem = row.locator("th.hour")
+                if hour_elem.count() == 0:
+                    continue
+                
+                hour_text = hour_elem.inner_text().strip()
+                if not hour_text.isdigit():
+                    continue
+                hour = int(hour_text)
+                
+                # その行に含まれる各列車 (div.item) をループ
+                items = row.locator("div.item").all()
+                for item in items:
+                    # 分を取得 (div.min)
+                    min_elem = item.locator("div.min")
+                    if min_elem.count() == 0:
+                        continue
+                    
+                    min_text = min_elem.inner_text().strip()
+                    if not min_text.isdigit():
+                        continue
+                    minute = int(min_text)
+                    
+                    # 今日の時刻として列車時刻を作成
                     train_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                     
-                    # 範囲内かチェック
-                    if start_time <= train_time <= end_time:
-                        # この行に遅延や運休のアイコンがあるかチェック
-                        delay_icon = row.locator(".icon-delay")
-                        unyu_icon = row.locator(".icon-unyu")
-                        bubun_icon = row.locator(".icon-bubun-unyu")
+                    # 範囲外ならスキップ
+                    if not (start_time <= train_time <= end_time):
+                        continue
+                        
+                    # 運行状態の判定
+                    status = ""
+                    # 1. アイコン(img.unkou)のチェック
+                    img_unkou = item.locator("img.unkou")
+                    if img_unkou.count() > 0:
+                        src = img_unkou.first.get_attribute("src") or ""
+                        if "mark_chien" in src:
+                            status = "⚠️ 遅延（△）"
+                        elif "mark_zenkyu" in src:
+                            status = "❌ 運休（✖）"
+                        elif "mark_bubunkyu" in src:
+                            status = "⚠️ 部分運休（✖）"
+                    
+                    # 2. データ属性による補足 (data-unkou, data-chien)
+                    unkou_code = item.get_attribute("data-unkou") # 0:運休, 1:正常, 2:部分運休
+                    chien_info = item.get_attribute("data-chien") # 遅延時間など
+                    
+                    if status == "":
+                        if unkou_code == "0":
+                            status = "❌ 運休"
+                        elif unkou_code == "2":
+                            status = "⚠️ 部分運休"
+                        elif chien_info and chien_info != "笏€":
+                            status = f"⚠️ 遅延 ({chien_info})"
 
-                        if delay_icon.count() > 0:
-                            alerts.append(f"⚠️ {hour:02}:{minute:02} 発 - 遅延が発生しています。")
-                        if unyu_icon.count() > 0:
-                            alerts.append(f"❌ {hour:02}:{minute:02} 発 - 運休しています。")
-                        if bubun_icon.count() > 0:
-                            alerts.append(f"⚠️ {hour:02}:{minute:02} 発 - 部分運休しています。")
+                    if status:
+                        alerts.append(f"{hour:02}:{minute:02} 発 - {status}")
 
             if alerts:
                 # 重複削除
                 unique_alerts = sorted(list(set(alerts)))
-                exec_mode = "【手動起動】" if "GITHUB_ACTIONS" in os.environ else "【ローカル実行】"
+                exec_mode = "【定期監視】" if "GITHUB_ACTIONS" in os.environ else "【ローカル実行】"
                 
                 message = f"\n{exec_mode} JR北海道 運行情報\n発寒中央駅（小樽方面）\n現在時刻の前後1時間の情報:\n" + "\n".join(unique_alerts)
                 print("Irregularities found within time range! Sending notification...")
