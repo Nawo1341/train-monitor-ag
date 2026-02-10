@@ -2,10 +2,10 @@ import os
 import sys
 import time
 import argparse
-from playwright.sync_api import sync_playwright
 import requests
-
-from datetime import datetime, timedelta
+import re
+from playwright.sync_api import sync_playwright
+from datetime import datetime, timedelta, timezone
 
 # 設定
 TARGET_URL = "https://www3.jrhokkaido.co.jp/webunkou/timetable.html?id=088"
@@ -29,6 +29,7 @@ def send_discord_notify(message):
 def check_train_status():
     """JR北海道の運行情報をチェックする"""
     with sync_playwright() as p:
+        # ブラウザ起動
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         
@@ -42,20 +43,24 @@ def check_train_status():
             if otaru_tab.count() > 0:
                 otaru_tab.first.click()
                 print("Clicked 'Otaru direction' tab.")
-                page.wait_for_timeout(2000) 
+                page.wait_for_timeout(3000) 
             
-            # 現在時刻の前後1時間の範囲を設定
-            now = datetime.now()
-            # GitHub ActionsはUTCなので日本時間に合わせる（+9時間）
-            # ただしローカル実行も考慮し、実行環境の時刻を基準にする（必要に応じて調整）
+            # 日本時間 (JST) を取得
+            jst = timezone(timedelta(hours=9))
+            now = datetime.now(jst)
+            
             start_time = now - timedelta(hours=1)
             end_time = now + timedelta(hours=1)
             
-            print(f"Checking trains between {start_time.strftime('%H:%M')} and {end_time.strftime('%H:%M')}")
+            print(f"--- Debug Info ---")
+            print(f"Current JST: {now.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Checking range: {start_time.strftime('%H:%M')} to {end_time.strftime('%H:%M')}")
 
+            alerts = []
+            
             # 時刻表の各行（1時間ごと）をループ
             rows = page.locator("tr").all()
-            alerts = []
+            print(f"Found {len(rows)} table rows.")
 
             for row in rows:
                 # 時を取得 (th.hour)
@@ -67,6 +72,11 @@ def check_train_status():
                 if not hour_text.isdigit():
                     continue
                 hour = int(hour_text)
+                
+                # 時のバリデーション (0-23)
+                if not (0 <= hour <= 23):
+                    print(f"Skipping invalid hour: {hour}")
+                    continue
                 
                 # その行に含まれる各列車 (div.item) をループ
                 items = row.locator("div.item").all()
@@ -81,13 +91,12 @@ def check_train_status():
                         continue
                     minute = int(min_text)
                     
-                    # 今日の時刻として列車時刻を作成
+                    # 今日の日付で列車時刻(JST)を作成
                     train_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
                     
-                    # 範囲外ならスキップ
-                    if not (start_time <= train_time <= end_time):
-                        continue
-                        
+                    # 範囲内かチェック
+                    in_range = start_time <= train_time <= end_time
+                    
                     # 運行状態の判定
                     status = ""
                     # 1. アイコン(img.unkou)のチェック
@@ -101,9 +110,9 @@ def check_train_status():
                         elif "mark_bubunkyu" in src:
                             status = "⚠️ 部分運休（✖）"
                     
-                    # 2. データ属性による補足 (data-unkou, data-chien)
-                    unkou_code = item.get_attribute("data-unkou") # 0:運休, 1:正常, 2:部分運休
-                    chien_info = item.get_attribute("data-chien") # 遅延時間など
+                    # 2. データ属性による補足
+                    unkou_code = item.get_attribute("data-unkou")
+                    chien_info = item.get_attribute("data-chien")
                     
                     if status == "":
                         if unkou_code == "0":
@@ -113,19 +122,24 @@ def check_train_status():
                         elif chien_info and chien_info != "笏€":
                             status = f"⚠️ 遅延 ({chien_info})"
 
-                    if status:
+                    # 判定ログを出力
+                    if in_range:
+                        print(f"  [IN RANGE] {hour:02}:{minute:02} | Status: {status or 'Normal'}")
+
+                    if in_range and status:
                         alerts.append(f"{hour:02}:{minute:02} 発 - {status}")
 
+            print(f"------------------")
+
             if alerts:
-                # 重複削除
                 unique_alerts = sorted(list(set(alerts)))
                 exec_mode = "【定期監視】" if "GITHUB_ACTIONS" in os.environ else "【ローカル実行】"
                 
-                message = f"\n{exec_mode} JR北海道 運行情報\n発寒中央駅（小樽方面）\n現在時刻の前後1時間の情報:\n" + "\n".join(unique_alerts)
-                print("Irregularities found within time range! Sending notification...")
+                message = f"\n{exec_mode} JR北海道 運行情報\n発寒中央駅（小樽方面）\n対象時間: {start_time.strftime('%H:%M')}〜{end_time.strftime('%H:%M')}\n\n" + "\n".join(unique_alerts)
+                print("Irregularities found! Sending to Discord...")
                 send_discord_notify(message)
             else:
-                print("No irregularities found for the specified time range.")
+                print("No irregularities found in the specified range.")
 
         except Exception as e:
             print(f"An error occurred during scraping: {e}")
@@ -133,7 +147,6 @@ def check_train_status():
             browser.close()
 
 if __name__ == "__main__":
-    import argparse
     parser = argparse.ArgumentParser(description="JR Train Monitor")
     parser.add_argument("--test", action="store_true", help="Send a test Discord notification and exit")
     args = parser.parse_args()
