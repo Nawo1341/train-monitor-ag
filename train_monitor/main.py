@@ -7,8 +7,9 @@ import re
 from playwright.sync_api import sync_playwright
 from datetime import datetime, timedelta, timezone
 
-# 環境変数からDiscord Webhook URLを取得。
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+# 環境変数からDiscord Webhook URLを取得
+DEFAULT_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+TEINE_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL_TEINE")
 
 # 日本時間 (JST)
 JST = timezone(timedelta(hours=9))
@@ -21,7 +22,8 @@ STATIONS = [
         "direction_name": "小樽方面",
         "panel_id": "#panelA2",
         "active_start": "17:30",
-        "active_end": "19:00"
+        "active_end": "19:00",
+        "webhook_url": DEFAULT_WEBHOOK_URL
     },
     {
         "name": "手稲駅",
@@ -29,21 +31,22 @@ STATIONS = [
         "direction_name": "札幌・岩見沢方面",
         "panel_id": "#panelA1",
         "active_start": "07:30",
-        "active_end": "09:00"
+        "active_end": "09:00",
+        "webhook_url": TEINE_WEBHOOK_URL or DEFAULT_WEBHOOK_URL
     }
 ]
 
-def send_discord_notify(message):
-    """Discord Webhookでメッセージを送信する"""
-    if not DISCORD_WEBHOOK_URL:
-        print("Error: DISCORD_WEBHOOK_URL is not set.")
+def send_discord_notify(webhook_url, message):
+    """指定されたWebhook URLにメッセージを送信する"""
+    if not webhook_url:
+        print("Error: Webhook URL is not set.")
         return
 
     data = {"content": message}
     try:
-        response = requests.post(DISCORD_WEBHOOK_URL, json=data)
+        response = requests.post(webhook_url, json=data)
         response.raise_for_status()
-        print("Notification sent successfully.")
+        print(f"Notification sent successfully.")
     except Exception as e:
         print(f"Failed to send notification: {e}")
 
@@ -116,14 +119,13 @@ def main():
     args = parser.parse_args()
 
     if args.test:
-        send_discord_notify("\nDiscord通知テスト: これはテストメッセージです。")
+        send_discord_notify(DEFAULT_WEBHOOK_URL, "\nDiscord通知テスト: これはテストメッセージです。")
         return
 
     now = datetime.now(JST)
     print(f"Current JST: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     
     exec_mode = "【定期監視】" if "GITHUB_ACTIONS" in os.environ else "【ローカル実行】"
-    all_messages = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -142,18 +144,13 @@ def main():
             
             station_alerts = scrape_station(page, station, now)
             if station_alerts:
-                station_msg = f"📍 {station['name']}（{station['direction_name']}）\n" + "\n".join(station_alerts)
-                all_messages.append(station_msg)
+                station_msg = f"\n{exec_mode} JR北海道 運行情報\n📍 {station['name']}（{station['direction_name']}）\n" + "\n".join(station_alerts)
+                print(f"Irregularities found for {station['name']}! Sending notification...")
+                send_discord_notify(station['webhook_url'], station_msg)
             else:
                 print(f"No irregularities found for {station['name']}.")
 
         browser.close()
-
-    if all_messages:
-        final_message = f"\n{exec_mode} JR北海道 運行情報\n\n" + "\n\n".join(all_messages)
-        send_discord_notify(final_message)
-    else:
-        print("Overall: No irregularities to notify.")
 
 if __name__ == "__main__":
     main()

@@ -32,4 +32,5 @@ jobs:
       - name: Run monitor script
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL_TEINE: ${{ secrets.DISCORD_WEBHOOK_URL_TEINE }}
         run: python train_monitor/main.py
