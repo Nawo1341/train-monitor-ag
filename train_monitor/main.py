@@ -1,25 +1,24 @@
 import os
 import sys
 import time
+import argparse
 from playwright.sync_api import sync_playwright
 import requests
 
 # 設定
 TARGET_URL = "https://www3.jrhokkaido.co.jp/webunkou/timetable.html?id=088"
-LINE_NOTIFY_API = "https://notify-api.line.me/api/notify"
-# 環境変数からトークンを取得。ローカルで動かす場合は直接書き換えるか環境変数を設定してください。
-LINE_TOKEN = os.getenv("LINE_NOTIFY_TOKEN")
+# 環境変数からDiscord Webhook URLを取得。
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-def send_line_notify(message):
-    """LINE Notifyでメッセージを送信する"""
-    if not LINE_TOKEN:
-        print("Error: LINE_NOTIFY_TOKEN is not set.")
+def send_discord_notify(message):
+    """Discord Webhookでメッセージを送信する"""
+    if not DISCORD_WEBHOOK_URL:
+        print("Error: DISCORD_WEBHOOK_URL is not set.")
         return
 
-    headers = {"Authorization": f"Bearer {LINE_TOKEN}"}
-    data = {"message": message}
+    data = {"content": message}
     try:
-        response = requests.post(LINE_NOTIFY_API, headers=headers, data=data)
+        response = requests.post(DISCORD_WEBHOOK_URL, json=data)
         response.raise_for_status()
         print("Notification sent successfully.")
     except Exception as e:
@@ -74,15 +73,24 @@ def check_train_status():
             if alerts:
                 message = "\n【JR北海道 運行情報】\n発寒中央駅（小樽方面）\n" + "\n".join(alerts)
                 print("Alert found! Sending notification...")
-                send_line_notify(message)
+                send_discord_notify(message)
             else:
                 print("No irregularities found. Normal operation assumed.")
 
         except Exception as e:
             print(f"An error occurred during scraping: {e}")
-            # エラー時も通知したい場合はここでsend_line_notifyを呼ぶ
+            # エラー時も通知したい場合はここでsend_discord_notifyを呼ぶ
         finally:
             browser.close()
 
 if __name__ == "__main__":
-    check_train_status()
+    import argparse
+    parser = argparse.ArgumentParser(description="JR Train Monitor")
+    parser.add_argument("--test", action="store_true", help="Send a test Discord notification and exit")
+    args = parser.parse_args()
+
+    if args.test:
+        print("Sending test notification...")
+        send_discord_notify("\nDiscord通知テスト: これはテストメッセージです。\nこの通知が届けば連携は成功しています。")
+    else:
+        check_train_status()
