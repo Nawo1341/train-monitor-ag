@@ -6,6 +6,11 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch: # 手動実行用
 
+# 同時実行を制御（新しいジョブが来たら古いものをキャンセルして遅延を防ぐ）
+concurrency:
+  group: train-monitor
+  cancel-in-progress: true
+
 jobs:
   check-status:
     runs-on: ubuntu-latest
