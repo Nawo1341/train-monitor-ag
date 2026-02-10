@@ -23,7 +23,7 @@ STATIONS = [
         "panel_id": "#panelA2",
         "active_start": "17:30",
         "active_end": "19:00",
-        "webhook_url": DEFAULT_WEBHOOK_URL
+        "webhook_urls": [DEFAULT_WEBHOOK_URL]
     },
     {
         "name": "手稲駅",
@@ -32,14 +32,14 @@ STATIONS = [
         "panel_id": "#panelA1",
         "active_start": "07:30",
         "active_end": "09:00",
-        "webhook_url": TEINE_WEBHOOK_URL or DEFAULT_WEBHOOK_URL
+        # 手稲はデフォルトのURLにも送りつつ、専用URLがあればそれにも送る
+        "webhook_urls": [DEFAULT_WEBHOOK_URL] + ([TEINE_WEBHOOK_URL] if TEINE_WEBHOOK_URL else [])
     }
 ]
 
 def send_discord_notify(webhook_url, message):
     """指定されたWebhook URLにメッセージを送信する"""
     if not webhook_url:
-        print("Error: Webhook URL is not set.")
         return
 
     data = {"content": message}
@@ -58,7 +58,7 @@ def scrape_station(page, station_config, now):
     page.goto(url)
     page.wait_for_load_state("networkidle")
 
-    # タブをクリック（もしデフォルトでなければ）
+    # タブをクリック
     try:
         tab = page.get_by_text(station_config['direction_name'])
         if tab.count() > 0:
@@ -145,8 +145,9 @@ def main():
             station_alerts = scrape_station(page, station, now)
             if station_alerts:
                 station_msg = f"\n{exec_mode} JR北海道 運行情報\n📍 {station['name']}（{station['direction_name']}）\n" + "\n".join(station_alerts)
-                print(f"Irregularities found for {station['name']}! Sending notification...")
-                send_discord_notify(station['webhook_url'], station_msg)
+                print(f"Irregularities found for {station['name']}! Sending to all configured webhooks...")
+                for url in station['webhook_urls']:
+                    send_discord_notify(url, station_msg)
             else:
                 print(f"No irregularities found for {station['name']}.")
 
