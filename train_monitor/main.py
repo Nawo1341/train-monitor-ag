@@ -97,10 +97,13 @@ def check_train_status():
                     # 範囲内かチェック
                     in_range = start_time <= train_time <= end_time
                     
-                    # 運行状態の判定
+                    # 運行状態の判定 (アイコンがある場合のみ通知対象とする)
                     status = ""
-                    # 1. アイコン(img.unkou)のチェック
                     img_unkou = item.locator("img.unkou")
+                    unkou_code = item.get_attribute("data-unkou")
+                    chien_info = item.get_attribute("data-chien")
+
+                    # 1. アイコン(img.unkou)のチェック - これがある場合のみ通知
                     if img_unkou.count() > 0:
                         src = img_unkou.first.get_attribute("src") or ""
                         if "mark_chien" in src:
@@ -110,21 +113,13 @@ def check_train_status():
                         elif "mark_bubunkyu" in src:
                             status = "⚠️ 部分運休（✖）"
                     
-                    # 2. データ属性による補足
-                    unkou_code = item.get_attribute("data-unkou")
-                    chien_info = item.get_attribute("data-chien")
+                    # 2. データ属性 (参考ログとしてのみ使用し、通知判定には使わない)
+                    # ユーザーから「記号がないものは通知不要」との要望があったため
                     
-                    if status == "":
-                        if unkou_code == "0":
-                            status = "❌ 運休"
-                        elif unkou_code == "2":
-                            status = "⚠️ 部分運休"
-                        elif chien_info and chien_info != "笏€":
-                            status = f"⚠️ 遅延 ({chien_info})"
-
                     # 判定ログを出力
                     if in_range:
-                        print(f"  [IN RANGE] {hour:02}:{minute:02} | Status: {status or 'Normal'}")
+                        log_status = status if status else f"Normal (unkou:{unkou_code}, chien:{chien_info})"
+                        print(f"  [IN RANGE] {hour:02}:{minute:02} | Status: {log_status}")
 
                     if in_range and status:
                         alerts.append(f"{hour:02}:{minute:02} 発 - {status}")
