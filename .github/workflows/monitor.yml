@@ -2,8 +2,8 @@ name: Train Monitor
 
 on:
   schedule:
-    # 5分ごとに実行
-    - cron: '*/5 * * * *'
+    # 10分ごとに実行（GitHub Actionsの安定性を考慮）
+    - cron: '*/10 * * * *'
   workflow_dispatch: # 手動実行用
 
 # 同時実行を制御（新しいジョブが来たら古いものをキャンセルして遅延を防ぐ）
