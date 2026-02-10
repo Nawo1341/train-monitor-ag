@@ -1,0 +1,31 @@
+name: Train Monitor
+
+on:
+  schedule:
+    # 15分ごとに実行 (日本時間に合わせて調整が必要だが、CronはUTC)
+    # */15 * * * * = 毎時0, 15, 30, 45分
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # 手動実行用
+
+jobs:
+  check-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r train_monitor/requirements.txt
+          playwright install chromium
+          playwright install-deps
+
+      - name: Run monitor script
+        env:
+          LINE_NOTIFY_TOKEN: ${{ secrets.LINE_NOTIFY_TOKEN }}
+        run: python train_monitor/main.py
