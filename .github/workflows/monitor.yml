@@ -2,11 +2,13 @@ name: Train Monitor
 
 on:
   schedule:
-    # 10分ごとに実行（GitHub Actionsの安定性を考慮）
-    - cron: '*/10 * * * *'
+    # 監視が必要な時間帯の直前に起動するように調整
+    # JST 7:30-9:00 の監視用に 7:15 (UTC 22:15) に起動
+    - cron: '15 22 * * *'
+    # JST 17:30-19:00 の監視用に 17:15 (UTC 8:15) に起動
+    - cron: '15 8 * * *'
   workflow_dispatch: # 手動実行用
 
-# 同時実行を制御（新しいジョブが来たら古いものをキャンセルして遅延を防ぐ）
 concurrency:
   group: train-monitor
   cancel-in-progress: true
@@ -23,14 +25,44 @@ jobs:
         with:
           python-version: '3.9'
 
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
       - name: Install dependencies
         run: |
           pip install -r train_monitor/requirements.txt
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v3
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install Playwright
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: |
           playwright install chromium
           playwright install-deps
 
-      - name: Run monitor script
+      - name: Install Playwright dependencies (always)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: playwright install-deps
+
+      - name: Run monitor script loop
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           DISCORD_WEBHOOK_URL_TEINE: ${{ secrets.DISCORD_WEBHOOK_URL_TEINE }}
-        run: python train_monitor/main.py
+        run: |
+          # 10分おきに計10回（約90分間）実行する
+          for i in {1..10}; do
+            echo "Execution $i of 10..."
+            python train_monitor/main.py
+            if [ $i -lt 10 ]; then
+              echo "Waiting 10 minutes for next execution..."
+              sleep 600
+            fi
+          done
